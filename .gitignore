@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.venv/
+venv/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Runtime outputs
+*.log
+result/
+
+# Local/raw private data inputs
+Data_Processing/raw/*
+!Data_Processing/raw/README.md
+*.tmp.parquet
+
+# Large generated artifacts (keep only curated samples)
+Overview_Check_Data/
