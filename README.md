@@ -2,75 +2,69 @@
 
 ## Overview
 
-Restaurant Traffic Forecasting is a time-series forecasting pipeline for predicting daily restaurant guest count (`guest_count`) at the restaurant level for the Golden Gate restaurant chain.
+Restaurant Traffic Forecasting is a time-series forecasting pipeline for predicting daily guest count at the restaurant level for the Golden Gate (GGG) restaurant chain. The project was developed by **CADS - FPT** as part of a demand forecasting engagement.
 
-The project combines sales-data preprocessing, restaurant eligibility filtering, feature engineering, restaurant behavior segmentation, and XGBoost-based forecasting. The final output is a next-month daily traffic forecast for each eligible restaurant.
+The pipeline combines sales-data preprocessing, restaurant eligibility filtering, feature engineering, restaurant behavior clustering, and XGBoost-based forecasting to produce a next-month daily traffic forecast for each eligible restaurant.
 
-This repository was revised from an internal forecasting project and cleaned for portfolio/repository sharing.
+> **Note:** This repository was revised from an internal forecasting project and cleaned for portfolio sharing. Internal data, HDFS paths, and production configurations are not included.
 
-## Problem statement
+## Project Background
 
-The goal is to predict the number of customers visiting each Golden Gate restaurant in the next month.
+- **Client:** Golden Gate (GGG) — a major restaurant chain in Vietnam
+- **Developer:** CADS - FPT
+- **Problem:** Golden Gate needed daily guest-count forecasts across 450+ restaurants to support operational planning (staffing, inventory, revenue projection)
+- **Data scope:** 19 internal data tables spanning sales, restaurant metadata, customers, bookings, promotions, and ratings; external data sources include weather and social ratings
+- **Forecast horizon:** Next-month daily prediction (D+1 to D+30/31) per restaurant
 
-- **Input:** Daily restaurant sales and traffic data from 2021 onward, including guest count, total sales, loyalty sales, bill count, restaurant metadata, calendar information, lunar calendar data, and holiday-related features.
+
+## Problem Statement
+
+Predict the number of customers visiting each Golden Gate restaurant in the next month.
+
+- **Input:** Daily restaurant sales and traffic data from January 2021 onward, including guest count, total sales, loyalty sales, bill count, restaurant metadata, calendar, lunar calendar, and holiday features.
 - **Output:** Daily guest-count forecast for each eligible restaurant in the next forecast month.
-- **Forecasting level:** Restaurant-level daily prediction, equivalent to forecasting `D+1` to `D+30/31` for each restaurant.
+- **Forecasting level:** Restaurant-level daily prediction (D+1 to D+30/31).
 
-## Scope
 
-The forecasting pipeline is designed for Golden Gate restaurants that satisfy the following conditions:
-
-- Restaurant is currently active.
-- Restaurant is not located in Vinh, Nghe An.
-- Restaurant brand is not `I-cook`, `Icook Store`, or `G-delivery`.
-- Restaurant has at least 42 historical days with available guest-count data before the first day of the forecast month.
-
-## What this project does
+## What This Project Does
 
 - Loads raw sales, restaurant, calendar, lunar-calendar, and holiday-related data.
 - Cleans and preprocesses restaurant-level daily guest-count records.
 - Removes invalid and abnormal traffic observations.
 - Fills missing guest-count labels using same-weekday historical values and annual restaurant-level averages.
 - Creates time-series, calendar, holiday, lunar-date, restaurant, lag, and rolling-statistics features.
-- Clusters restaurants by weekly seasonality and traffic volatility.
+- Clusters restaurants by weekly seasonality and traffic volatility into 5 behavior groups.
 - Splits restaurants into two forecasting groups:
   - **Global:** lower-complexity restaurants with clearer weekly patterns and lower traffic volatility.
   - **Local:** higher-complexity restaurants with weaker weekly patterns and higher traffic volatility.
-- Trains and applies XGBoost forecasting models for the Global and Local groups.
-- Aggregates Global and Local predictions into a final prediction output file.
+- Trains and applies XGBoost models for each group.
+- Aggregates Global and Local predictions into a final output file.
 
-## Forecasting approach
+## Forecasting Approach
 
-### Rolling monthly training
+### Rolling Monthly Training
 
-For each forecast month `T`, the model uses historical data from January 2022 through month `T-1` as training data, then predicts daily guest count for month `T`.
+For each forecast month `T`, the model trains on historical data from January 2022 through month `T-1` and predicts daily guest count for month `T`. The validation period used for model selection and parameter tuning is July 2022 – December 2023 (18 months).
 
-The validation period used for model selection and parameter tuning is July 2022 to December 2023.
-
-### Restaurant segmentation
+### Restaurant Segmentation
 
 Restaurants are clustered into 5 behavior groups based on two dimensions:
 
-1. **Weekly periodicity (`weekly_pc`)**  
-   Measures how strongly guest traffic repeats by weekly pattern. This is calculated using a Fourier-based approach.
-
-2. **Traffic fluctuation score**  
-   Measures how volatile restaurant traffic is over time using statistical properties such as standard deviation and mean.
+1. **Weekly periodicity (`weekly_pc`)** — measures how strongly guest traffic follows a weekly pattern, calculated via Fourier analysis.
+2. **Traffic fluctuation score** — measures traffic volatility using statistical properties (standard deviation, mean).
 
 The 5 clusters are then grouped into two model families:
 
-- **Global model:** restaurants with clearer weekly seasonality and lower complexity.
-- **Local model:** restaurants with unclear weekly seasonality and higher volatility.
+| Model | Characteristics |
+|---|---|
+| **Global** | Clearer weekly seasonality, lower traffic volatility, lower complexity |
+| **Local** | Weaker weekly patterns, higher volatility, higher complexity |
 
 ### Model
 
-The project uses **XGBoost Regressor** for structured time-series forecasting.
+**XGBoost Regressor** for structured time-series forecasting with two configurations:
 
-Two model configurations are used:
-
-#### Global model
-
-Used for lower-complexity restaurant groups.
+#### Global Model
 
 ```python
 XGBRegressor(
@@ -84,9 +78,7 @@ XGBRegressor(
 )
 ```
 
-#### Local model
-
-Used for higher-complexity restaurant groups.
+#### Local Model
 
 ```python
 XGBRegressor(
@@ -100,201 +92,188 @@ XGBRegressor(
 )
 ```
 
-Other XGBoost parameters use default values.
+Other parameters use XGBoost defaults.
 
-## Feature engineering
+### Model Optimization
 
-### Restaurant features
+Compared to the initial pilot model, the optimized pipeline achieved:
 
-- `cluster`: restaurant behavior cluster based on weekly periodicity and traffic volatility.
+- **90% reduction** in the number of features used
+- **70% reduction** in model training time
+- Improved preprocessing logic: updated restaurant eligibility rules, better handling of missing and abnormal data
+- Restaurant clustering replaced manual grouping for data-driven segmentation
 
-### Calendar and time features
+## Feature Engineering
 
-- `dayofweek`
-- `weekend`
-- `month`
-- `year`
-- day of month
-- regular calendar date attributes
+### Restaurant Features
 
-### Holiday features
+- `cluster`: restaurant behavior cluster (weekly periodicity + traffic volatility).
 
-- holiday indicator
-- pre-holiday indicator
-- restaurant-level holiday weight
+### Calendar & Time Features
 
-`holiday_weight` represents how much a specific holiday affects guest count for each restaurant. It is calculated by comparing holiday traffic with average traffic on comparable weekdays, removing outliers with z-score filtering, and filling missing values using brand-level medians where available.
+- `dayofweek`, `weekend`, `month`, `year`, day of month, and standard calendar attributes.
 
-### Lunar calendar features
+### Holiday Features
 
-- beginning-of-month lunar date indicator
-- mid-month lunar date indicator
+- Holiday indicator, pre-holiday indicator, and restaurant-level holiday weight.
 
-### Lag features
+`holiday_weight` quantifies how much a specific holiday affects guest count per restaurant. It is computed by comparing holiday traffic against average traffic on comparable weekdays, removing outliers via z-score filtering, and filling missing values with brand-level medians.
 
-Historical guest-count values from previous days, including short-term and longer-cycle lags such as:
+### Lunar Calendar Features
 
-- previous 1–9 days
-- previous 14, 21, 28, 35, 42, 49, 56, and 64 days
+- Beginning-of-month and mid-month lunar date indicators.
 
-### Statistical features
+### Lag Features
 
-Historical traffic statistics from prior periods, including:
+Historical guest-count values: previous 1–9 days and longer-cycle lags (14, 21, 28, 35, 42, 49, 56, 64 days).
 
-- mean
-- median
-- minimum
-- maximum
+### Statistical Features
 
-These features are calculated from previous guest-count observations, especially recent historical windows before the forecast month.
+Mean, median, minimum, and maximum of guest count computed over recent historical windows before the forecast month.
 
-## Data preprocessing
+## Data Preprocessing
 
-The preprocessing pipeline handles the following issues:
-
-1. **Invalid guest-count values**
-   - Removes rows where `guest_count` is negative, zero, or null.
-
-2. **Abnormal traffic values**
-   - Detects and removes unusually high or low guest-count observations for each restaurant using Prophet-based anomaly handling.
-
-3. **Missing daily observations**
-   - Builds a complete restaurant-date frame for the forecast period.
-   - Joins actual guest-count data into the complete frame.
-   - Fills missing `guest_count` using the same weekday from the previous week.
-   - If still missing, fills using the restaurant's average guest count in the same year.
-
-4. **Restaurant eligibility**
-   - Filters restaurants based on operating status, opening/closing dates, location, brand, and historical data availability.
+1. **Invalid values** — removes rows with negative, zero, or null `guest_count`.
+2. **Abnormal values** — detects and removes outlier observations per restaurant using Prophet-based anomaly handling.
+3. **Missing observations** — builds a complete restaurant-date frame, fills missing `guest_count` with the same weekday from the previous week, then falls back to the restaurant's annual average if still missing.
+4. **Restaurant eligibility** — filters by operating status, open/close dates, location, brand, and historical data sufficiency.
 
 ## Evaluation
 
-The model is evaluated using Absolute Percentage Error-based metrics:
+### Metrics
 
-### MAPE
+Absolute Percentage Error-based metrics, with **WAPE as the primary evaluation metric**:
 
-```text
-MAPE = mean(abs(y_true - y_pred) / y_true) * 100
+```
+MAPE = mean(|y_true - y_pred| / y_true) × 100
+WAPE = sum(|y_true - y_pred|) / sum(y_true) × 100
 ```
 
-### WAPE
+### Evaluation Scope
 
-```text
-WAPE = sum(abs(y_true - y_pred)) / sum(y_true) * 100
-```
+- **Period:** July 2022 – December 2023 (18 months)
+- **Scale:** 450+ restaurants per month (470+ in some months)
+- **Comparison:** Three-way benchmark — GGG internal forecast vs. FPT pilot (old model) vs. FPT opt (new model)
 
-WAPE is the main evaluation metric.
+### Restaurant Groups
+
+- **Baseline:** restaurants open ≥ 1 year as of February 28, 2023.
+- **Non-baseline:** restaurants open < 1 year as of February 28, 2023.
 
 ## Performance
 
-Evaluation period: **July 2022 to December 2023**
+### Overall WAPE Results (18-month evaluation period)
 
-Scope: **440+ restaurants per month**, with 470+ restaurants in 12 months. Restaurants are evaluated across two groups:
+| Forecast Level | GGG | FPT Pilot | FPT Opt |
+|---|---:|---:|---:|
+| Daily | 27.1% | 25.3% | **22.0%** |
+| Weekly | 16.4% | 17.5% | **13.6%** |
+| Monthly | 12.2% | 15.5% | **10.9%** |
 
-- **Baseline:** restaurants open for at least 1 year as of February 28, 2023.
-- **Non-baseline:** restaurants open for less than 1 year as of February 28, 2023.
+### WAPE by Restaurant Group
 
-### WAPE results
+| Forecast Level | Group | GGG | FPT Pilot | FPT Opt |
+|---|---|---|---|---|
+| Daily | Baseline | 25.6% | 24.6% | **21.3%** |
+| Daily | Non-baseline | 33.8% | 29.0% | **25.3%** |
+| Weekly | Baseline | 15.5% | 16.7% | **12.8%** |
+| Weekly | Non-baseline | 20.3% | 21.0% | **16.9%** |
+| Monthly | Baseline | 11.5% | 14.9% | **10.3%** |
+| Monthly | Non-baseline | 15.5% | 18.2% | **13.6%** |
 
-| Forecast level | Old model - Baseline | Old model - Non-baseline | Old model - Total | New model - Baseline | New model - Non-baseline | New model - Total |
-|---|---:|---:|---:|---:|---:|---:|
-| Daily | 24.6 | 29.0 | 25.3 | 21.3 | 25.3 | 22.0 |
-| Weekly | 16.7 | 21.0 | 17.5 | 12.8 | 16.9 | 13.6 |
-| Monthly | 14.9 | 18.2 | 15.5 | 10.3 | 13.6 | 10.9 |
+**Key findings:**
 
-The new forecasting flow improved WAPE by approximately **3–4 percentage points** across daily, weekly, and monthly forecast levels.
+- The optimized model improved daily WAPE by **~13%** vs. the old model (3 percentage points) and by **~19%** vs. GGG's internal forecast (5 percentage points).
+- The largest gains were on the **non-baseline** group (~25% improvement over GGG), where sparse history made forecasting harder.
+- On weekly and monthly aggregates, the optimized model consistently outperformed both GGG and the pilot model.
 
-Feature-importance analysis showed that the most influential features were mainly historical lag features, historical traffic statistics, and holiday-related features.
+### Performance by Day Type (Daily WAPE)
 
-## Repository structure
+| Day Type | GGG | FPT Pilot | FPT Opt | Improvement vs. GGG |
+|---|---|---|---|---|
+| Holiday | 37.3% | 27.4% | **23.9%** | ↓ 13.4 pp |
+| Pre-holiday | 31.0% | 32.9% | **26.5%** | ↓ 4.5 pp |
+| Weekend | 21.6% | 20.7% | **17.3%** | ↓ 4.3 pp |
+| Weekday | 28.7% | 27.6% | **24.6%** | ↓ 4.1 pp |
+
+The largest accuracy gains came on **holidays** (13.4 percentage point reduction in WAPE), driven by the holiday-weight feature and pre-holiday indicators. Pre-holiday accuracy also improved significantly over the pilot model due to added pre-holiday features.
+
+### Performance Across Trial Phases (Daily WAPE — All Restaurants)
+
+| Phase | Period | GGG | FPT Pilot | FPT Opt |
+|---|---|---|---|---|
+| 1 — Experiment | 05–09/2023 | 26.8% | 25.6% | **22.5%** |
+| 2 — Pilot 1.0 | 10–12/2023 | 27.1% | 25.0% | **22.1%** |
+| 3 — Pilot 2.0 | 01–04/2024 | — | 31.3% | **28.9%** |
+
+
+
+### Feature Importance
+
+The most influential features were historical lag features, historical traffic statistics, and holiday-related features — confirming the value of engineered time-series and calendar features over raw data inputs.
+
+
+
+
+## Repository Structure
 
 ```text
 .
-├── 1_set_config.py
-├── 2_preprocess_data.py
-├── 3_cluster_restaurant_id.py
-├── 4_main_predict_global.py
-├── 5_main_predict_local.py
-├── 6_aggregate_predict_result.py
+├── 1_set_config.py              # Generate/update runtime configuration
+├── 2_preprocess_data.py         # Data preprocessing & feature preparation
+├── 3_cluster_restaurant_id.py   # Restaurant clustering (seasonality + volatility)
+├── 4_main_predict_global.py     # Global model forecasting pipeline
+├── 5_main_predict_local.py      # Local model forecasting pipeline
+├── 6_aggregate_predict_result.py # Merge Global + Local predictions
 ├── Config/
-│   └── config.ini
+│   └── config.ini               # Main configuration file
 ├── Data_Processing/
-│   ├── raw/
-│   └── result/
+│   ├── raw/                     # Input data directory
+│   └── result/                  # Output results directory
 └── README.md
 ```
 
-### Main scripts
+### Main Scripts
 
-- `1_set_config.py`  
-  Generates or updates runtime configuration in `Config/config.ini`.
+| Script | Description |
+|---|---|
+| `1_set_config.py` | Generates/updates runtime configuration in `Config/config.ini` |
+| `2_preprocess_data.py` | Data preprocessing, anomaly handling, missing-value treatment, feature generation |
+| `3_cluster_restaurant_id.py` | Clusters restaurants by weekly periodicity and traffic fluctuation |
+| `4_main_predict_global.py` | Global forecasting pipeline for lower-complexity restaurants |
+| `5_main_predict_local.py` | Local forecasting pipeline for higher-complexity restaurants |
+| `6_aggregate_predict_result.py` | Aggregates Global and Local outputs into the final forecast |
 
-- `2_preprocess_data.py`  
-  Runs data preprocessing, anomaly handling, missing-value treatment, feature preparation, and dataset generation.
+## Input Data
 
-- `3_cluster_restaurant_id.py`  
-  Clusters restaurants based on weekly periodicity and traffic fluctuation.
-
-- `4_main_predict_global.py`  
-  Runs the Global forecasting pipeline for lower-complexity restaurant groups.
-
-- `5_main_predict_local.py`  
-  Runs the Local forecasting pipeline for higher-complexity restaurant groups.
-
-- `6_aggregate_predict_result.py`  
-  Aggregates Global and Local prediction outputs into the final forecast result.
-
-## Input data
-
-Place private input files in:
-
-```text
-Data_Processing/raw/
-```
-
-Expected input files include:
-
-- `sales_store.parquet`
-- `dim_restaurant.parquet`
-- `dim_date.parquet`
-- `moon_date.parquet`
-- `pre_holiday.parquet`
-- holiday-weight data, if available
-- restaurant-cluster data, if available
-
-### Main data sources
+Place input files in `Data_Processing/raw/`. Expected files:
 
 | Dataset | Description |
 |---|---|
-| `sales_store` | Daily restaurant sales and traffic data, including `shift_date`, `restaurant_id`, `guest_count`, `total_sale`, `total_loyalty_sale`, and `total_bill`. |
-| `d_date` / `dim_date` | Calendar table containing dates, weekdays, and holiday information. |
-| `d_restaurant` / `dim_restaurant` | Restaurant metadata, including operating information and restaurant attributes. |
-| `moon_calendar` | Lunar calendar data covering January 2020 to December 2025. |
-| `holiday_weight` | Restaurant-level holiday impact weights. |
-| `cluster_km` | Restaurant behavior-cluster labels. |
+| `sales_store` | Daily restaurant sales and traffic: `shift_date`, `restaurant_id`, `guest_count`, `total_sale`, `total_loyalty_sale`, `total_bill` |
+| `dim_restaurant` | Restaurant metadata: operating info, capacity, open/close dates, brand, location |
+| `dim_date` | Calendar table: dates, weekdays, holiday flags (2000–2050) |
+| `moon_date` | Lunar calendar data (2020–2025) |
+| `pre_holiday` | Pre-holiday indicator data |
+| `holiday_weight` | Restaurant-level holiday impact weights |
+| `cluster_km` | Restaurant behavior-cluster labels (if pre-computed) |
 
 ## Configuration
 
-Main configuration file:
-
-```text
-Config/config.ini
-```
+Main config file: `Config/config.ini`
 
 Key fields to review before running:
 
-- `final_date`
-- `path_sale_store`
-- `path_dim_restaurant`
-- `path_dim_date`
-- `path_holiday`
-- `path_cluster_km`
-- `path_moon_date`
-- `path_pre_holiday`
+- `final_date` — last date of the forecast month
+- `path_sale_store` — path to sales data
+- `path_dim_restaurant` — path to restaurant metadata
+- `path_dim_date` — path to calendar data
+- `path_holiday` — path to holiday weight data
+- `path_cluster_km` — path to cluster labels
+- `path_moon_date` — path to lunar calendar data
+- `path_pre_holiday` — path to pre-holiday data
 
-The configuration should be updated to match the latest available data paths before each forecast run.
-
-## Quick start
+## Quick Start
 
 ### 1. Install dependencies
 
@@ -302,7 +281,7 @@ The configuration should be updated to match the latest available data paths bef
 pip install -r requirements.txt
 ```
 
-### 2. Configure input paths and forecast dates
+### 2. Configure paths and forecast dates
 
 ```bash
 python 1_set_config.py
@@ -322,8 +301,6 @@ python 2_preprocess_data.py
 python 3_cluster_restaurant_id.py
 ```
 
-Depending on your repository version, this step may be implemented as a notebook such as `3_cluster_restaurant_id.ipynb`.
-
 ### 5. Run Global forecast
 
 ```bash
@@ -336,7 +313,7 @@ python 4_main_predict_global.py --time 2024-05
 python 5_main_predict_local.py --time 2024-05
 ```
 
-### 7. Aggregate prediction results
+### 7. Aggregate results
 
 ```bash
 python 6_aggregate_predict_result.py
@@ -344,20 +321,17 @@ python 6_aggregate_predict_result.py
 
 ## Output
 
-The final prediction output is generated after aggregating Global and Local model results.
-
-Example output path in the original internal environment:
+The final prediction is a parquet file aggregating Global and Local model results. Example output path:
 
 ```text
 data_forecasting/predict_result.parquet
 ```
 
-The actual output path depends on your local or production configuration.
+The actual output path depends on your local configuration.
 
 ## Notes
 
-- The repository may include lightweight sample parquet files for sharing and testing.
 - Private production data and internal HDFS paths are not included.
-- Local filesystem and HDFS settings may need to be adapted for your environment.
-- Some script names and cluster IDs may differ depending on the cleaned repository version. Check the current config and script arguments before running.
-- This repository was revised from original code used in an internal project at a previous company.
+- Local filesystem and HDFS settings may need adaptation for your environment.
+- Some script names and cluster IDs may differ depending on the cleaned repository version.
+- **This repository was revised from original code used in an internal project**.
